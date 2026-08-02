@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+pipeline_out/
+result/
+*.pth
+*.pt

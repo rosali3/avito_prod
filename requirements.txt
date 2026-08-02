@@ -1,0 +1,16 @@
+# numpy<2 закреплён ЯВНО: обнаружено, что paddlepaddle (нужен для OCR)
+# тянет numpy>=2, что ломает torch/rfdetr (нулевые/мусорные предсказания,
+# см. README "Известная проблема"). Если pip не сможет разрешить этот пин
+# совместно с paddlepaddle (конфликт версий) — OCR-шаг нужно вынести в
+# отдельный контейнер/процесс с собственным venv, не мешать с torch/rfdetr
+# в одном окружении.
+numpy<2
+
+opencv-python-headless
+pillow
+pycocotools
+huggingface_hub
+rfdetr
+torch
+paddleocr
+paddlepaddle
