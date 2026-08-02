@@ -9,6 +9,11 @@ Avito): предобработка → RF-DETR-Seg → (заглушка: меб
 с пост-процессингом, threshold sweep) и **весь train-пайплайн** — в
 отдельном research-репозитории, см. [`TRAINING.md`](TRAINING.md).
 
+## Смежные репозитории
+
+- **Код с экспериментами модели**: https://github.com/rosali3/avito_floorplan_segmentation-
+- **Код с экспериментами по данным**: https://github.com/VelmorSdfg/ResPlan_Dataset
+
 ## Пайплайн
 
 ```
