@@ -69,13 +69,47 @@ docker run -v $(pwd)/plan.jpg:/data/plan.jpg -v $(pwd)/result:/app/result \
     floorplan-inference --image /data/plan.jpg --out-dir /app/result
 ```
 
-### Docker Hub (готовый образ)
+### Docker Hub (готовый образ, разворачивать без сборки)
+
+🐳 https://hub.docker.com/r/nabiullinastudy/floorplan-inference
+
+**1. Скачать образ** (один раз, ~10.7 ГБ — включает torch/rfdetr/paddleocr):
 ```bash
 docker pull nabiullinastudy/floorplan-inference:latest
+```
+
+**2. Запустить на своей картинке:**
+```bash
 docker run --rm \
     -v /путь/к/твоей/картинке.jpg:/data/plan.jpg \
     -v /путь/куда/сохранить/result:/app/result \
     nabiullinastudy/floorplan-inference --image /data/plan.jpg --out-dir /app/result
+```
+Чекпоинт модели (RF-DETR или UNet) скачается автоматически с HuggingFace
+Hub при первом запуске и закэшируется — чтобы не качать заново при
+каждом `docker run`, смонтируй volume под кэш:
+```bash
+docker run --rm \
+    -v /путь/к/картинке.jpg:/data/plan.jpg \
+    -v /путь/к/result:/app/result \
+    -v hf_cache:/root/.cache/huggingface \
+    nabiullinastudy/floorplan-inference --image /data/plan.jpg --out-dir /app/result
+```
+
+**3. Все доступные флаги** (после `--image ... --out-dir ...`):
+
+| Флаг | По умолчанию | Что делает |
+|---|---|---|
+| `--model {rfdetr,unet}` | `rfdetr` | какая модель сегментации (RF-DETR рекомендуется, лучше на UGC) |
+| `--rfdetr-threshold N` | `0.15` | confidence-порог для RF-DETR (per-model оптимум по room F1) |
+| `--no-clahe` | выкл (CLAHE применяется) | отключить CLAHE-предобработку |
+| `--no-ocr` | выкл (OCR применяется) | отключить OCR подписей площади (ускоряет прогон) |
+| `--no-unet-room-fill` | выкл (fill применяется) | только с `--model unet`: отключить Canny room-fill постобработку |
+
+Пример с UNet вместо RF-DETR:
+```bash
+docker run --rm -v /путь/к/картинке.jpg:/data/plan.jpg -v /путь/к/result:/app/result \
+    nabiullinastudy/floorplan-inference --image /data/plan.jpg --out-dir /app/result --model unet
 ```
 
 ## Как проверить руками, что образ работает
