@@ -34,7 +34,12 @@ from PIL import Image
 from .mask_nms import mask_nms
 
 HF_REPO = "nabiullina-dstu/avito-floorplan-checkpoints"
-HF_FILENAME = "rfdetr_seg/checkpoint_best_ema.pth"
+# ВАЖНО: именно _regular, не _ema! EMA-веса для этого чекпоинта дают
+# практически нулевой confidence (max ~0.08 на любой картинке) — EMA не
+# успела сойтись за 4-5 эпох обучения (RF-DETR остановлен очень рано).
+# Обнаружено сравнением с оригинальным test_predictions.json (там 162
+# инстанса, max score 0.478 — воспроизводится только с _regular).
+HF_FILENAME = "rfdetr_seg/checkpoint_best_regular.pth"
 DEFAULT_THRESHOLD = 0.15
 DEFAULT_NMS_IOU = 0.5
 
