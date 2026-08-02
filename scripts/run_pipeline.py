@@ -42,8 +42,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--image", required=True, help="путь к фото плана")
     ap.add_argument("--out-dir", default="pipeline_out", help="куда сохранить результат")
+    ap.add_argument("--model", choices=["rfdetr", "unet"], default="rfdetr",
+                     help="rfdetr (рекомендуется, лучше на UGC) или unet (+Canny room-fill)")
     ap.add_argument("--no-clahe", action="store_true", help="отключить CLAHE-предобработку")
     ap.add_argument("--no-ocr", action="store_true", help="отключить OCR площадей")
+    ap.add_argument("--no-unet-room-fill", action="store_true",
+                     help="для --model unet: отключить Canny room-fill постобработку")
     ap.add_argument("--rfdetr-threshold", type=float, default=0.15)
     args = ap.parse_args()
 
@@ -53,6 +57,8 @@ def main():
 
     result = run_pipeline(
         image_bgr,
+        model=args.model,
+        unet_room_fill=not args.no_unet_room_fill,
         apply_clahe=not args.no_clahe,
         rfdetr_threshold=args.rfdetr_threshold,
         run_ocr=not args.no_ocr,
@@ -79,11 +85,18 @@ def main():
     with open(out_dir / "result.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
 
-    print(f"Найдено инстансов: {len(result['instances'])}")
-    for cid, name in CLASS_NAMES.items():
-        n = sum(1 for i in result["instances"] if i["category_id"] == cid)
-        if n:
-            print(f"  {name}: {n}")
+    if args.model == "rfdetr":
+        print(f"Найдено инстансов: {len(result['instances'])}")
+        for cid, name in CLASS_NAMES.items():
+            n = sum(1 for i in result["instances"] if i["category_id"] == cid)
+            if n:
+                print(f"  {name}: {n}")
+    else:
+        print("Классы на semantic-маске (UNet):")
+        for cid, name in CLASS_NAMES.items():
+            px = int((result["semantic_mask"] == cid).sum())
+            if px:
+                print(f"  {name}: {px} px")
     print(f"Подписей площади (OCR): {len(result['area_labels'])}")
     print(f"-> {out_dir / 'overlay.png'}")
     print(f"-> {out_dir / 'result.json'}")

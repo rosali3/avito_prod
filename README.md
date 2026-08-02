@@ -1,8 +1,8 @@
 # floorplan-inference
 
 Инференс-пайплайн сегментации поэтажных планов (реальные UGC-фото, напр. с
-Avito): предобработка → RF-DETR-Seg → (заглушка: мебель) → OCR площадей →
-сборка результата.
+Avito): предобработка → сегментация (RF-DETR-Seg **или** UNet+Canny
+room-fill) → (заглушка: мебель) → OCR площадей → сборка результата.
 
 Это **inference-only** репозиторий — облегчённый, для деплоя/демо. Полное
 исследование (сравнение 9 моделей, вся методология оценки, эксперименты
@@ -20,9 +20,16 @@ Avito): предобработка → RF-DETR-Seg → (заглушка: меб
 фото плана
   → preprocessing.py   CLAHE (clip=2.0, tile=8x8) — включено по умолчанию,
                         калибровано на UGC-подобных (тусклых) фото
-  → rfdetr_infer.py     RF-DETR-Seg (Medium), чекпоинт с HuggingFace Hub,
+  → --model rfdetr (по умолчанию, рекомендуется):
+      rfdetr_infer.py   RF-DETR-Seg (Medium), чекпоинт с HuggingFace Hub,
                         threshold=0.15 (per-model оптимум по room F1),
                         mask-NMS iou=0.5
+  → --model unet (альтернатива):
+      unet_infer.py     UNet-simple, чекпоинт с HuggingFace Hub
+      room_fill.py       + Canny room-fill постобработка (room F1 0.568->0.588
+                        на UGC test — единственный сценарий, где этот
+                        пост-процессинг реально помогает, см. README
+                        research-репозитория)
   → furniture_stub.py   ЗАГЛУШКА — реальный вызов закомментирован,
                         см. файл и раздел "Статус мебельной модели" ниже
   → ocr.py              PaddleOCR (без предобработки — CLAHE ей вредит)
@@ -30,15 +37,22 @@ Avito): предобработка → RF-DETR-Seg → (заглушка: меб
   → pipeline.py          собирает всё в один результат (JSON + overlay PNG)
 ```
 
+RF-DETR рекомендуется по умолчанию (лучше на UGC test: segm AP@50=0.277
+против UNet 0.050, см. research-репозиторий) — UNet добавлен как
+альтернатива/для сравнения, не как основной путь.
+
 ## Запуск
 
 ### Локально
 ```bash
 pip install -r requirements.txt
 python scripts/run_pipeline.py --image plan.jpg --out-dir result/
+# или UNet + Canny room-fill вместо RF-DETR:
+python scripts/run_pipeline.py --image plan.jpg --model unet --out-dir result/
 ```
-Чекпоинт RF-DETR скачается автоматически с HuggingFace Hub
-(`nabiullina-dstu/avito-floorplan-checkpoints`) при первом запуске.
+Чекпоинт (RF-DETR либо UNet, в зависимости от `--model`) скачается
+автоматически с HuggingFace Hub (`nabiullina-dstu/avito-floorplan-checkpoints`)
+при первом запуске.
 
 ### Docker
 ```bash
@@ -68,19 +82,33 @@ recall 38.8% (лучший результат из трёх сверенных �
 
 ## Известная проблема
 
-На момент коммита локальное окружение разработки (Windows,
-`claude_instseg_compare/.venv-local-infer`) даёт **нулевые/мусорные
-предсказания RF-DETR** (max confidence ~0.09 на картинках, где раньше
-получались сотни детекций с confidence 0.3-0.9+) — подозревается конфликт
-`numpy 2.x` (был подтянут при установке `paddlepaddle` для сравнения OCR-
-движков) с `torch`/`rfdetr`. Не удалось проверить гипотезу (откатить
-`numpy<2`) из-за отсутствия сети в момент отладки. **Пайплайн в этом
-репозитории НЕ протестирован end-to-end с реальным RF-DETR-инференсом** —
-только модульно (preprocessing/furniture-заглушка проверены отдельно).
-Перед первым реальным использованием: пересобрать окружение с нуля
-(например, именно через `requirements.txt` этого репозитория, БЕЗ
-paddlepaddle в том же venv, что и torch/rfdetr) и прогнать
-`scripts/run_pipeline.py` на тестовом фото.
+RF-DETR даёт **нулевые/мусорные предсказания** (max confidence ~0.07-0.09
+на картинках, где по сохранённому официальному результату исследования —
+`claude_instseg_compare/output/rfdetr_seg/predictions/test_predictions.json`
+— для ТОГО ЖЕ файла с ТЕМ ЖЕ чекпоинтом должно быть 162 инстанса, max
+score 0.478). Собрано в Docker на school1 (Linux, чистое окружение,
+`numpy<2`, тот же чекпоинт по хэшу совпадает с оригинальным) — баг
+воспроизводится и там, значит **это не про numpy/paddlepaddle-конфликт**
+(эта гипотеза проверена и отклонена). Файл изображения (`md5sum`) и
+чекпоинта (размер) совпадают с исходными — не порча данных при переносе.
+Текущая рабочая гипотеза: **версии `rfdetr`/`torch` не запинены** ни
+здесь, ни в исходном research-репозитории (`pip install rfdetr torch`
+без версий) — на момент оригинального инференса `pip` подтянул одни
+версии, сейчас (в новом окружении) — другие, возможно с регрессией в
+загрузке чекпоинта (в логе есть тревожный warning: "checkpoint lacks
+args.num_queries / args.group_detr; falling back to flat slice ... may
+scramble per-group query structure"). Не допроверено — детерминированность
+подтверждена (5+ повторных запусков дают одинаковый неверный результат),
+то есть это не случайность, а воспроизводимая проблема конкретно с
+версией пакета. **Пайплайн НЕ протестирован end-to-end с рабочим
+RF-DETR-инференсом.** UNet-путь (`--model unet`) тоже не проверен по той
+же причине (не успели из-за приоритета на диагностику RF-DETR).
+
+Перед первым реальным использованием: найти версии `rfdetr`/`torch`,
+которыми изначально считался `test_predictions.json` (проверить
+`pip freeze` в истории/логах research-репозитория, если сохранились),
+запинить их явно в `requirements.txt`, и заново прогнать
+`scripts/run_pipeline.py` на тестовом фото до полной проверки.
 
 ## Что НЕ включено
 
