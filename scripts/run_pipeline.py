@@ -53,9 +53,11 @@ def append_area_footer(overlay_bgr: np.ndarray, area_labels: list[dict]) -> np.n
     # ASCII-only: cv2.putText (Hershey-шрифты) не умеет в кириллицу/юникод
     # (в т.ч. "²") — рисует "?????" вместо текста. Если понадобится
     # кириллица — нужен PIL.ImageDraw с TTF-шрифтом вместо cv2.putText.
-    values = sorted(a["value_m2"] for a in area_labels)
-    header = f"Areas found (OCR, {len(values)}):"
-    values_text = "  ".join(f"{v:.2f} m2" for v in values)
+    # "room_number: area" — уже отфильтровано на этапе OCR (pipeline/ocr.py):
+    # берутся только площади с парным номером комнаты сверху, не любое число.
+    pairs = sorted(area_labels, key=lambda a: a.get("room_number", ""))
+    header = f"Areas found (OCR, {len(pairs)}):"
+    values_text = "  ".join(f"{a.get('room_number', '?')}: {a['value_m2']:.2f}m2" for a in pairs)
 
     # перенос длинной строки значений на несколько, если не влезает по ширине
     w = overlay_bgr.shape[1]

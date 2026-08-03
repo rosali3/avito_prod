@@ -71,15 +71,18 @@ def _boxes_from_result(res) -> list[dict]:
     return boxes
 
 
-def _find_area_candidates(boxes: list[dict]) -> set[int]:
+def _find_area_pairs(boxes: list[dict]) -> dict[int, int]:
     """Та же эвристика, что furniture/data_prep/ocr_visualize.py в
     research-репозитории: на плане в центре комнаты обычно печатают ДВА
     числа друг под другом (сверху — номер комнаты, маленькое целое;
     снизу — площадь, десятичное число). Без этой привязки OCR находит
     ЛЮБОЕ десятичное число на плане, включая размеры стен/проёмов
     (напр. "2.35" на размерной линии) — их не отличить от площади по
-    одному только формату текста."""
-    area_idx: set[int] = set()
+    одному только формату текста. Если пары нет — число не берём вообще.
+
+    Возвращает {area_idx: room_number_idx}; если десятичное число подходит
+    под НЕСКОЛЬКО целых сверху — берём ближайшее по вертикальному зазору."""
+    best: dict[int, tuple[int, float]] = {}  # area_idx -> (room_idx, gap)
     for i, a in enumerate(boxes):
         if not INT_RE.match(a["text"]):
             continue
@@ -94,20 +97,25 @@ def _find_area_candidates(boxes: list[dict]) -> set[int]:
             avg_h = (a["h"] + b["h"]) / 2 or 1.0
             gap = b["y0"] - a["y1"]
             if -avg_h <= gap <= avg_h * 3 and abs(a["cx"] - b["cx"]) < avg_h * 4:
-                area_idx.add(j)
-    return area_idx
+                if j not in best or gap < best[j][1]:
+                    best[j] = (i, gap)
+    return {area_idx: room_idx for area_idx, (room_idx, _gap) in best.items()}
 
 
 def extract_area_labels(image_bgr: np.ndarray) -> list[dict]:
-    """Возвращает список кандидатов в подписи площади — ТОЛЬКО десятичные
-    числа, над которыми стоит маленькое целое (номер комнаты), — а не
-    любое десятичное число на плане (иначе в кандидаты попадают и размеры
-    стен на размерных линиях):
-    [{"bbox": [[x,y],...] (4 точки) или None, "text": str,
-      "value_m2": float, "conf": float}, ...]
+    """Возвращает список кандидатов в подписи площади в формате
+    "номер_комнаты: площадь" (напр. "1: 5.9") — ТОЛЬКО десятичные числа,
+    над которыми стоит маленькое целое (номер комнаты), а не любое
+    десятичное число на плане (иначе в кандидаты попадают и размеры стен
+    на размерных линиях). Если пары не нашлось — число не возвращается
+    вообще:
+    [{"bbox": [[x,y],...] (4 точки, bbox площади) или None,
+      "room_number": str, "text": "1: 5.9", "value_m2": float,
+      "conf": float}, ...]
     Без предобработки (см. модуль docstring). Без дальнейшей geometric-
-    привязки к конкретной комнате — это уже отдельный шаг поверх, см.
-    furniture/data_prep/room_area_ocr.py в research-репозитории."""
+    привязки к конкретной комнате на маске — это уже отдельный шаг
+    поверх, см. furniture/data_prep/room_area_ocr.py в
+    research-репозитории."""
     engine = _get_engine()
     results = engine.predict(image_bgr)
     if not results:
@@ -116,14 +124,19 @@ def extract_area_labels(image_bgr: np.ndarray) -> list[dict]:
     candidates = []
     for res in results:
         boxes = _boxes_from_result(res)
-        area_idx = _find_area_candidates(boxes)
-        for j in area_idx:
-            b = boxes[j]
+        pairs = _find_area_pairs(boxes)
+        for area_idx, room_idx in pairs.items():
+            b = boxes[area_idx]
+            room_number = boxes[room_idx]["text"]
             try:
                 value = float(b["text"].replace(",", "."))
             except ValueError:
                 continue
             candidates.append({
-                "bbox": b["bbox"], "text": b["text"], "value_m2": value, "conf": b["conf"],
+                "bbox": b["bbox"],
+                "room_number": room_number,
+                "text": f"{room_number}: {b['text']}",
+                "value_m2": value,
+                "conf": b["conf"],
             })
     return candidates
