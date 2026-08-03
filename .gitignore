@@ -4,5 +4,6 @@ __pycache__/
 venv/
 pipeline_out/
 result/
+results/
 *.pth
 *.pt

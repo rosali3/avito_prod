@@ -38,10 +38,54 @@ def overlay_semantic_mask(image_bgr: np.ndarray, mask: np.ndarray, alpha: float 
     return out.astype(np.uint8)
 
 
+def append_area_footer(overlay_bgr: np.ndarray, area_labels: list[dict]) -> np.ndarray:
+    """Расширяет картинку вниз белой полосой и печатает там все найденные
+    OCR-подписи площади (пост-постобработка — после сборки overlay).
+    Если подписей нет — картинка не меняется (полоса не добавляется)."""
+    if not area_labels:
+        return overlay_bgr
+
+    line_h = 22
+    pad_top, pad_bottom = 10, 10
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale, thickness = 0.5, 1
+
+    # ASCII-only: cv2.putText (Hershey-шрифты) не умеет в кириллицу/юникод
+    # (в т.ч. "²") — рисует "?????" вместо текста. Если понадобится
+    # кириллица — нужен PIL.ImageDraw с TTF-шрифтом вместо cv2.putText.
+    values = sorted(a["value_m2"] for a in area_labels)
+    header = f"Areas found (OCR, {len(values)}):"
+    values_text = "  ".join(f"{v:.2f} m2" for v in values)
+
+    # перенос длинной строки значений на несколько, если не влезает по ширине
+    w = overlay_bgr.shape[1]
+    max_chars_per_line = max(20, int(w / 8))
+    wrapped_lines = [header]
+    line = ""
+    for token in values_text.split("  "):
+        candidate = f"{line}  {token}".strip()
+        if len(candidate) > max_chars_per_line and line:
+            wrapped_lines.append(line)
+            line = token
+        else:
+            line = candidate
+    if line:
+        wrapped_lines.append(line)
+
+    footer_h = pad_top + pad_bottom + line_h * len(wrapped_lines)
+    footer = np.full((footer_h, w, 3), 255, dtype=np.uint8)
+    for i, text in enumerate(wrapped_lines):
+        y = pad_top + line_h * (i + 1) - 6
+        cv2.putText(footer, text, (10, y), font, font_scale, (0, 0, 0), thickness, cv2.LINE_AA)
+
+    return np.vstack([overlay_bgr, footer])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--image", required=True, help="путь к фото плана")
-    ap.add_argument("--out-dir", default="pipeline_out", help="куда сохранить результат")
+    ap.add_argument("--out-dir", default=None,
+                     help="куда сохранить результат (по умолчанию results/<model>/)")
     ap.add_argument("--model", choices=["rfdetr", "unet"], default="rfdetr",
                      help="rfdetr (рекомендуется, лучше на UGC) или unet (+Canny room-fill)")
     ap.add_argument("--no-clahe", action="store_true", help="отключить CLAHE-предобработку")
@@ -64,10 +108,11 @@ def main():
         run_ocr=not args.no_ocr,
     )
 
-    out_dir = Path(args.out_dir)
+    out_dir = Path(args.out_dir) if args.out_dir else Path("results") / args.model
     out_dir.mkdir(parents=True, exist_ok=True)
 
     overlay = overlay_semantic_mask(image_bgr, result["semantic_mask"])
+    overlay = append_area_footer(overlay, result["area_labels"])
     cv2.imwrite(str(out_dir / "overlay.png"), overlay)
 
     summary = {
