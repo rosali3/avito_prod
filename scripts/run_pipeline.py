@@ -110,10 +110,11 @@ def main():
 
     out_dir = Path(args.out_dir) if args.out_dir else Path("results") / args.model
     out_dir.mkdir(parents=True, exist_ok=True)
+    stem = Path(args.image).stem
 
     overlay = overlay_semantic_mask(image_bgr, result["semantic_mask"])
     overlay = append_area_footer(overlay, result["area_labels"])
-    cv2.imwrite(str(out_dir / "overlay.png"), overlay)
+    cv2.imwrite(str(out_dir / f"{stem}_overlay.png"), overlay)
 
     summary = {
         "n_instances": len(result["instances"]),
@@ -127,7 +128,7 @@ def main():
             for a in result["area_labels"]
         ],
     }
-    with open(out_dir / "result.json", "w", encoding="utf-8") as f:
+    with open(out_dir / f"{stem}_result.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
 
     if args.model == "rfdetr":
@@ -143,8 +144,8 @@ def main():
             if px:
                 print(f"  {name}: {px} px")
     print(f"Подписей площади (OCR): {len(result['area_labels'])}")
-    print(f"-> {out_dir / 'overlay.png'}")
-    print(f"-> {out_dir / 'result.json'}")
+    print(f"-> {out_dir / f'{stem}_overlay.png'}")
+    print(f"-> {out_dir / f'{stem}_result.json'}")
 
 
 if __name__ == "__main__":
