@@ -21,6 +21,8 @@
 - **Код с экспериментами модели**: https://github.com/rosali3/avito_floorplan_segmentation-
 - **Код с экспериментами по данным**: https://github.com/VelmorSdfg/ResPlan_Dataset
 
+![Сравнение всех 9 моделей на одном UGC-фото](docs/assets/model_comparison_example.png)
+
 ## Пайплайн
 
 ```
